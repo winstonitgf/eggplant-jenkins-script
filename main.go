@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/http/cookiejar"
 )
 
 var (
@@ -12,6 +16,7 @@ var (
 	apiPort     string
 	apiUser     string
 	apiPassword string
+	client      = &http.Client{}
 )
 
 func init() {
@@ -32,16 +37,73 @@ func main() {
 	if h {
 		flag.Usage()
 	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Println(err)
+		}
+	}()
+
+	LoginEggplant()
+
+	ExecuteEggplantAPI()
 }
 
 func ExecuteEggplantAPI() {
-	baseUri := fmt.Sprintf("%s://%s:%s", apiScheme, apiHost, apiPort)
-	fmt.Println(baseUri)
 
-	apiUriPrefix := "api"
-	testResourceName := "test"
-	testRunResourceName := "test_run"
-	configurationResourceName := "execution_configuration"
-	execute := "execute"
-	executePollDuration := 5
+	// 組合 Domain
+	baseUri := fmt.Sprintf("%s://%s:%s", apiScheme, apiHost, apiPort)
+	testListAPI := fmt.Sprintf("%s/api/test", baseUri)
+	testExecuteAPI := fmt.Sprintf("%s/api/test/%s/execute", baseUri)
+	// fmt.Println(baseUri)
+
+	// 
+	getTestList := 
+
+	// apiUriPrefix := "api"
+	// testResourceName := "test"
+	// testRunResourceName := "test_run"
+	// configurationResourceName := "execution_configuration"
+	// execute := "execute"
+	// executePollDuration := 5
+
+}
+
+func LoginEggplant() {
+
+	// login API URL
+	loginApi := fmt.Sprintf("%s://%s:%s/rest2/auth_user", apiScheme, apiHost, apiPort)
+
+	// POST BODY
+	// fmt.Println(fmt.Sprintf(`{"user_name":"%s","password":"%s"}`, apiUser, apiPassword))
+	jsonStr := []byte(fmt.Sprintf(`{ "user_name": %s, "password": %s }`, apiUser, apiPassword))
+
+	// 建立 Cookie 放到 Client 中，之後的請求會自動加入 Cookie
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		panic(err)
+	}
+	client.Jar = jar
+
+	// 建立 Request
+	req, err := http.NewRequest("POST", loginApi, bytes.NewBuffer(jsonStr))
+	if err != nil {
+		panic(err)
+	}
+
+	// 置入 Header
+	req.Header.Set("Content-Type", `application/json`)
+
+	// 開始請求
+	resp, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+
+	// 讀取結果
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(body))
 }
