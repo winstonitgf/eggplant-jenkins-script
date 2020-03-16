@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 )
 
 var (
@@ -54,11 +55,33 @@ func ExecuteEggplantAPI() {
 	// 組合 Domain
 	baseUri := fmt.Sprintf("%s://%s:%s", apiScheme, apiHost, apiPort)
 	testListAPI := fmt.Sprintf("%s/api/test", baseUri)
-	testExecuteAPI := fmt.Sprintf("%s/api/test/%s/execute", baseUri)
-	// fmt.Println(baseUri)
+	// testExecuteAPI := fmt.Sprintf("%s/api/test/%s/execute", baseUri)
+	fmt.Println(testListAPI)
 
-	// 
-	getTestList := 
+	cookieURL, _ := url.Parse(fmt.Sprintf("%s://%s:%s", apiScheme, apiHost, apiPort))
+	for _, item := range client.Jar.Cookies(cookieURL) {
+		item.Name = "em_session"
+		fmt.Println(item.Name, item.Value)
+		
+	}
+	// 建立 Request
+	req, err := http.NewRequest("GET", testListAPI, nil)
+	if err != nil {
+		panic(err)
+	}
+	// 開始請求
+	resp, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+
+	// 讀取結果
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("取得測試清單：", resp.Status, string(body))
 
 	// apiUriPrefix := "api"
 	// testResourceName := "test"
@@ -73,11 +96,10 @@ func LoginEggplant() {
 
 	// login API URL
 	loginApi := fmt.Sprintf("%s://%s:%s/rest2/auth_user", apiScheme, apiHost, apiPort)
-
 	// POST BODY
 	// fmt.Println(fmt.Sprintf(`{"user_name":"%s","password":"%s"}`, apiUser, apiPassword))
-	jsonStr := []byte(fmt.Sprintf(`{ "user_name": %s, "password": %s }`, apiUser, apiPassword))
-
+	jsonStr := []byte(fmt.Sprintf(`{ "user_name": "%s", "password": "%s" }`, apiUser, apiPassword))
+	fmt.Println(fmt.Sprintf(`{ "user_name": %s, "password": %s }`, apiUser, apiPassword))
 	// 建立 Cookie 放到 Client 中，之後的請求會自動加入 Cookie
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -101,9 +123,11 @@ func LoginEggplant() {
 	}
 
 	// 讀取結果
-	body, err := ioutil.ReadAll(resp.Body)
+	_, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(string(body))
+
+	fmt.Println(loginApi, ", 登入：", resp.Status)
+	resp.Body.Close()
 }
