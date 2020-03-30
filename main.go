@@ -2,12 +2,15 @@ package main
 
 import (
 	"bytes"
+	"eggplant-jenkins/models"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
-	"net/url"
 )
 
 var (
@@ -17,6 +20,7 @@ var (
 	apiPort     string
 	apiUser     string
 	apiPassword string
+	apiToken    string
 	client      = &http.Client{}
 )
 
@@ -27,9 +31,7 @@ func init() {
 	flag.StringVar(&apiPort, "apiPort", "8080", "Port of ePM server")
 	flag.StringVar(&apiUser, "apiUser", "admin", "ePM user username")
 	flag.StringVar(&apiPassword, "apiPassword", "admin", "ePM user password")
-
-	// 改变默认的 Usage，flag包中的Usage 其实是一个函数类型。这里是覆盖默认函数实现，具体见后面Usage部分的分析
-	// flag.Usage = usage
+	flag.StringVar(&apiToken, "apiToken", "898b12d0ce0cd78d9675289525fa1a05220ba5e9e7cc98177a14853e08c25714", "ePM user token")
 }
 
 func main() {
@@ -37,7 +39,12 @@ func main() {
 
 	if h {
 		flag.Usage()
+	} else {
+		Start()
 	}
+}
+
+func Start() {
 
 	defer func() {
 		if err := recover(); err != nil {
@@ -45,51 +52,82 @@ func main() {
 		}
 	}()
 
-	LoginEggplant()
+	ok := true
+	var testResult []int
+	testCaseList := GetEggplantTestCaseList()
+	for _, testcase := range testCaseList.Tests {
 
-	ExecuteEggplantAPI()
+		// 如果是 ACTIVE 狀態就跑測試
+		if testcase.IsActive {
+
+			// 執行腳本
+			execute := ExecuteEggplantTestCase(testcase.Id)
+
+			for {
+
+				// 取得測試結果
+				testExecuteResult := GetEggplantExecuteResult(execute.Id)
+				if testExecuteResult.StatusCode != 100 {
+					testResult = append(testResult, testExecuteResult.StatusCode)
+
+					// 狀態不是200, 代表測試不過
+					if ok && testExecuteResult.StatusCode != 200 {
+						ok = false
+					}
+					break
+				}
+			}
+		}
+	}
+
+	if !ok {
+		panic(errors.New("測試不通過"))
+	}
 }
 
-func ExecuteEggplantAPI() {
+func GetEggplantTestCaseList() (testCase models.TestModel) {
 
 	// 組合 Domain
-	baseUri := fmt.Sprintf("%s://%s:%s", apiScheme, apiHost, apiPort)
-	testListAPI := fmt.Sprintf("%s/api/test", baseUri)
-	// testExecuteAPI := fmt.Sprintf("%s/api/test/%s/execute", baseUri)
-	fmt.Println(testListAPI)
+	baseUri := fmt.Sprintf("%s://%s@%s:%s", apiScheme, apiToken, apiHost, apiPort)
+	api := fmt.Sprintf("%s/api/test", baseUri)
 
-	cookieURL, _ := url.Parse(fmt.Sprintf("%s://%s:%s", apiScheme, apiHost, apiPort))
-	for _, item := range client.Jar.Cookies(cookieURL) {
-		item.Name = "em_session"
-		fmt.Println(item.Name, item.Value)
-		
-	}
-	// 建立 Request
-	req, err := http.NewRequest("GET", testListAPI, nil)
-	if err != nil {
-		panic(err)
-	}
-	// 開始請求
-	resp, err := client.Do(req)
-	if err != nil {
+	body := HttpDo("GET", api, nil)
+
+	if err := json.Unmarshal(body, &testCase); err != nil {
 		panic(err)
 	}
 
-	// 讀取結果
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
+	return
+}
+
+func ExecuteEggplantTestCase(id string) (testExecuteResult models.TestExecuteResultModel) {
+
+	// 組合 Domain
+	baseUri := fmt.Sprintf("%s://%s@%s:%s", apiScheme, apiToken, apiHost, apiPort)
+	api := fmt.Sprintf("%s/api/test/%s/execute", baseUri, id)
+
+	body := HttpDo("GET", api, nil)
+
+	if err := json.Unmarshal(body, &testExecuteResult); err != nil {
 		panic(err)
 	}
 
-	fmt.Println("取得測試清單：", resp.Status, string(body))
+	return
+}
 
-	// apiUriPrefix := "api"
-	// testResourceName := "test"
-	// testRunResourceName := "test_run"
-	// configurationResourceName := "execution_configuration"
-	// execute := "execute"
-	// executePollDuration := 5
+func GetEggplantExecuteResult(id string) (testExecuteResult models.TestExecuteResultModel) {
 
+	// 組合 Domain
+	baseUri := fmt.Sprintf("%s://%s@%s:%s", apiScheme, apiToken, apiHost, apiPort)
+	api := fmt.Sprintf("%s/api/test_run/%s", baseUri, id)
+
+	body := HttpDo("GET", api, nil)
+
+	if err := json.Unmarshal(body, &testExecuteResult); err != nil {
+		panic(err)
+	}
+
+	return
 }
 
 func LoginEggplant() {
@@ -130,4 +168,29 @@ func LoginEggplant() {
 
 	fmt.Println(loginApi, ", 登入：", resp.Status)
 	resp.Body.Close()
+}
+
+func HttpDo(method, url string, payload io.Reader) (body []byte) {
+
+	// 建立 Request
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic(err)
+	}
+	// 開始請求
+	resp, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+
+	// 讀取結果
+	body, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("url：", url)
+	fmt.Println("status: ", resp.Status)
+
+	return
 }
